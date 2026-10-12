@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报销智能问答助手</title>
+<style>
+  :root { --brand:#1565C0; --brand-dark:#0d47a1; --bg:#f4f6fb;
+    --bubble-bot:#fff; --bubble-user:#1565C0;
+    --esc:#e65100; --esc-bg:#fff3e0; --esc-border:#ffcc80; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg); color:#1a1a1a; height:100vh; display:flex; flex-direction:column; }
+  header { background:linear-gradient(135deg,var(--brand),var(--brand-dark)); color:#fff; padding:14px 18px;
+    box-shadow:0 2px 8px rgba(0,0,0,.15); display:flex; align-items:center; gap:12px; }
+  header h1 { margin:0; font-size:17px; flex:1; }
+  header p { margin:3px 0 0; font-size:11px; opacity:.85; }
+  header button { background:rgba(255,255,255,.18); color:#fff; border:1px solid rgba(255,255,255,.4);
+    border-radius:8px; padding:5px 10px; font-size:12px; cursor:pointer; }
+  header button:hover { background:rgba(255,255,255,.3); }
+  #chat { flex:1; overflow-y:auto; padding:18px; display:flex; flex-direction:column; gap:14px; }
+  .msg { max-width:80%; padding:11px 14px; border-radius:14px; line-height:1.65; font-size:14px; white-space:pre-wrap; word-break:break-word; }
+  .bot { align-self:flex-start; background:var(--bubble-bot); border:1px solid #e3e8f0; border-bottom-left-radius:4px; }
+  .user { align-self:flex-end; background:var(--bubble-user); color:#fff; border-bottom-right-radius:4px; }
+  .cites { margin-top:8px; font-size:12px; color:#1565C0; }
+  .cites span { background:#e3f2fd; padding:1px 7px; border-radius:10px; margin:0 5px 4px 0; display:inline-block; }
+  .esc-card { align-self:flex-start; max-width:84%; background:var(--esc-bg); border:1px solid var(--esc-border);
+    border-left:4px solid var(--esc); border-radius:12px; padding:13px 15px; }
+  .esc-card .tag { display:inline-block; background:var(--esc); color:#fff; font-size:12px; padding:2px 10px; border-radius:10px; margin-bottom:7px; }
+  .esc-card .reason { font-size:14px; line-height:1.6; color:#bf360c; }
+  .esc-card .eid { margin-top:7px; font-size:12px; color:#bf360c; opacity:.8; }
+  .typing { align-self:flex-start; font-size:13px; color:#888; padding:6px 10px; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; padding:0 18px 10px; }
+  .chip { background:#e3f2fd; color:#1565C0; border:none; padding:6px 12px; border-radius:14px; font-size:12px; cursor:pointer; }
+  .chip:hover { background:#bbdefb; }
+  footer { display:flex; gap:10px; padding:13px 18px; background:#fff; border-top:1px solid #e3e8f0; }
+  #q { flex:1; padding:12px 14px; border:1px solid #cfd8e3; border-radius:10px; font-size:14px; outline:none; }
+  #q:focus { border-color:var(--brand); }
+  #send { background:var(--brand); color:#fff; border:none; padding:0 22px; border-radius:10px; font-size:14px; cursor:pointer; }
+  #send:disabled { opacity:.6; cursor:default; }
+  /* 抽屉 */
+  #drawer { position:fixed; top:0; right:0; width:360px; max-width:90vw; height:100vh; background:#fff;
+    box-shadow:-4px 0 16px rgba(0,0,0,.18); transform:translateX(100%); transition:transform .25s; z-index:20;
+    display:flex; flex-direction:column; }
+  #drawer.open { transform:translateX(0); }
+  #drawer header { background:var(--brand); }
+  #drawer .body { flex:1; overflow-y:auto; padding:14px; font-size:13px; }
+  #drawer .rec { border:1px solid #eee; border-radius:10px; padding:10px 12px; margin-bottom:10px; }
+  #drawer .rec .id { color:#e65100; font-weight:600; }
+  #drawer .rec .meta { color:#888; font-size:11px; margin:4px 0; }
+  #drawer .rec .q { color:#222; }
+  #drawer .rec .r { color:#bf360c; margin-top:4px; }
+  #drawer .empty { color:#999; text-align:center; margin-top:40px; }
+  /* 设置弹层 */
+  #settings { position:fixed; inset:0; background:rgba(0,0,0,.35); display:none; align-items:center; justify-content:center; z-index:30; }
+  #settings.open { display:flex; }
+  #settings .panel { background:#fff; width:380px; max-width:92vw; border-radius:14px; padding:20px; }
+  #settings h3 { margin:0 0 12px; font-size:15px; color:var(--brand); }
+  #settings label { display:block; font-size:12px; color:#555; margin:10px 0 4px; }
+  #settings input { width:100%; padding:9px 10px; border:1px solid #cfd8e3; border-radius:8px; font-size:13px; box-sizing:border-box; }
+  #settings .hint { font-size:11px; color:#999; margin-top:8px; line-height:1.5; }
+  #settings .btns { display:flex; gap:10px; justify-content:flex-end; margin-top:14px; }
+  #settings button { padding:8px 16px; border-radius:8px; font-size:13px; cursor:pointer; border:none; }
+  #settings .save { background:var(--brand); color:#fff; }
+  #settings .cancel { background:#eee; color:#444; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>报销智能问答助手</h1>
+    <p>基于公司政策库即时答疑 · 政策冲突或缺失将自动转人工审核</p>
+  </div>
+  <button id="btnRecords">转人工记录</button>
+  <button id="btnSettings">AI 设置</button>
+</header>
+
+<div id="chat">
+  <div class="msg bot">您好，我是报销政策助手。请问有什么可以帮您？
+可尝试：「出差住宿标准」「P级员工出差餐补多少」「报销发票有什么要求」「公司年假几天」</div>
+</div>
+
+<div class="chips" id="chips">
+  <button class="chip" data-q="出差住宿标准是多少">住宿标准</button>
+  <button class="chip" data-q="P级员工出差餐补每天多少">差旅餐补</button>
+  <button class="chip" data-q="报销发票有什么要求">发票要求</button>
+  <button class="chip" data-q="市内外出打车能报销吗">市内交通</button>
+  <button class="chip" data-q="公司年假有几天">未知问题</button>
+</div>
+
+<footer>
+  <input id="q" placeholder="输入您的问题，例如：出差打车能报销吗？" autocomplete="off">
+  <button id="send">发送</button>
+</footer>
+
+<!-- 转人工记录抽屉 -->
+<div id="drawer">
+  <header>
+    <h1 style="font-size:15px;">转人工审核记录</h1>
+    <button id="drawerClose">关闭</button>
+  </header>
+  <div class="body" id="recBody"></div>
+</div>
+
+<!-- AI 设置弹层 -->
+<div id="settings">
+  <div class="panel">
+    <h3>大模型 AI 增强（可选）</h3>
+    <label>API Base URL（OpenAI 兼容）</label>
+    <input id="setBase" placeholder="https://api.openai.com/v1">
+    <label>API Key</label>
+    <input id="setKey" placeholder="sk-..." type="password">
+    <label>模型名称</label>
+    <input id="setModel" placeholder="gpt-4o-mini">
+    <div class="hint">留空则使用本地规则引擎（离线可答）。填写后将调用真实模型作答。注意：浏览器直接调用可能受跨域(CORS)限制，失败时自动回退规则引擎。</div>
+    <div class="btns">
+      <button class="cancel" id="setCancel">取消</button>
+      <button class="save" id="setSave">保存</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================ 政策库（样例，替换真实政策改这里） ============================
+const POLICIES = [
+  {id:"travel_hotel_exec", category:"差旅住宿", title:"差旅住宿标准（管理/高管职级）",
+   content:"总监及以上职级出差，住宿费标准为：一线城市 ¥800/晚，新一线及二线城市 ¥600/晚，其他城市 ¥400/晚；须入住协议酒店并保留发票。",
+   keywords:["差旅","住宿","酒店","出差","一线城市","高管","总监","标准"], effective_date:"2026-01-01"},
+  {id:"travel_hotel_staff", category:"差旅住宿", title:"差旅住宿标准（普通员工职级）",
+   content:"经理及以下职级出差，住宿费标准为：一线城市 ¥500/晚，新一线及二线城市 ¥400/晚，其他城市 ¥300/晚；优先选择经济型酒店。",
+   keywords:["差旅","住宿","酒店","出差","一线城市","普通员工","经理","标准"], effective_date:"2026-01-01"},
+  {id:"travel_taxi", category:"市内交通", title:"市内交通（打车）报销规定",
+   content:"市内外出公务可乘坐出租车/网约车，单程费用不超过 ¥100；需备注起止地点与事由，凭电子行程单或发票报销。",
+   keywords:["市内交通","打车","出租车","网约车","出差","交通"], effective_date:"2026-01-01"},
+  {id:"travel_meal_a", category:"差旅餐补", title:"差旅餐补标准（P级员工）",
+   content:"P级及以上员工出差期间享受差旅餐补 ¥200/天（同场景不同额度政策之一），按实际出差自然日计发，无需发票。",
+   keywords:["差旅餐补","出差","餐补","P级","额度","同场景"], conflict_with:["travel_meal_b"], effective_date:"2026-03-01"},
+  {id:"travel_meal_b", category:"差旅餐补", title:"差旅餐补标准（P级员工·财务口径）",
+   content:"P级及以上员工出差期间差旅餐补为 ¥150/天（同场景不同额度政策之二），适用于 2026 年第二季度起，按出差自然日计发。",
+   keywords:["差旅餐补","出差","餐补","P级","额度","同场景"], conflict_with:["travel_meal_a"], effective_date:"2026-04-01"},
+  {id:"meal_entertain", category:"餐饮招待费", title:"业务招待（餐饮）费用规定",
+   content:"客户/合作方业务招待用餐须提前在 OA 提交招待申请并经直属上级审批；人均标准不超过 ¥300，超标部分自理；报销附审批单与发票。",
+   keywords:["餐饮","招待","客户","业务招待","招待费","审批"], effective_date:"2026-01-01"},
+  {id:"invoice_req", category:"票据要求", title:"发票与票据要求",
+   content:"所有报销须提供合法票据：增值税普通发票或专用发票，发票抬头须为公司全称及正确税号；收据、白条原则上不予报销。",
+   keywords:["发票","票据","报销","抬头","税号","普通发票","专用发票","收据","白条"], effective_date:"2026-01-01"},
+  {id:"reimb_deadline", category:"报销时效", title:"费用报销时效",
+   content:"费用发生后须在 30 个自然日内提交报销申请；跨月费用应在当月结清，逾期需附情况说明并经部门负责人审批。",
+   keywords:["报销","时效","期限","30天","提交","逾期"], effective_date:"2026-01-01"},
+  {id:"comm_subsidy", category:"通讯补贴", title:"通讯补贴标准",
+   content:"正式员工每月享受通讯补贴 ¥100，随工资发放，无需单独报销；试用期员工不享受。",
+   keywords:["通讯补贴","手机","电话","补贴"], effective_date:"2026-01-01"},
+  {id:"training_fee", category:"培训费", title:"外部培训费用报销",
+   content:"经部门审批的外部培训/认证费用可报销，单次不超过 ¥5000；需提供培训通知、发票与结业证明，报销前须在系统登记。",
+   keywords:["培训","培训费","认证","外部培训","报销","审批"], effective_date:"2026-01-01"},
+  {id:"office_supplies", category:"办公用品采购", title:"办公用品采购与报销",
+   content:"各部门月度办公用品预算 ¥2000；超预算采购须经总监审批。统一由行政部集中采购，个人垫付凭发票报销。",
+   keywords:["办公用品","采购","预算","行政","报销","部门"], effective_date:"2026-01-01"},
+  {id:"travel_air", category:"差旅交通", title:"差旅交通（高铁/飞机）舱位标准",
+   content:"出差优先选乘高铁二等座；飞机出行经济舱，单程飞行时长超过 4 小时可乘商务舱。票价以提前采购的最低可行价为准。",
+   keywords:["差旅","交通","高铁","飞机","商务舱","经济舱","出差"], effective_date:"2026-01-01"},
+  {id:"overtime_meal", category:"加班餐补", title:"加班餐补规定",
+   content:"工作日加班至 20:00 后，可报销加班餐补 ¥30/次，需打卡记录佐证；每月不超过 10 次。",
+   keywords:["加班","餐补","加班餐补","报销","打卡"], effective_date:"2026-01-01"}
+];
+
+// ============================ 轻量中文分词 + 检索 ============================
+const STOPWORDS = new Set("的 了 在 是 和 与 或 及 对 于 中 为 之 等 这 那 哪 什么 多少 怎么 如何 可以 能 吗 呢 啊 吧 请 问 有 没有 需要 应该 要 到 个 条 元 天 月 年 次 人".split(" "));
+
+function tokenize(text){
+  if(!text) return new Set();
+  text = String(text);
+  const tokens = new Set();
+  const latin = text.toLowerCase().match(/[a-z0-9]+/g) || [];
+  latin.forEach(t=>tokens.add(t));
+  const cjk = text.match(/[一-鿿]/g) || [];
+  cjk.forEach(c=>tokens.add(c));
+  for(let i=0;i<cjk.length-1;i++){ tokens.add(cjk[i]+cjk[i+1]); }
+  return new Set([...tokens].filter(t=>!STOPWORDS.has(t)));
+}
+function hay(policy){
+  return tokenize((policy.title||"")+" "+(policy.content||"")+" "+ (policy.keywords||[]).join(" "));
+}
+function scorePolicy(qTokens, policy){
+  const h = hay(policy);
+  const kw = tokenize((policy.keywords||[]).join(" "));
+  let score=0;
+  qTokens.forEach(t=>{ if(h.has(t)) score += kw.has(t) ? 3 : (t.length>=2 ? 2 : 1); });
+  return score;
+}
+function retrieve(query, policies, top_k=6){
+  const qTokens = tokenize(query);
+  if(qTokens.size===0) return [];
+  const qBig = new Set([...qTokens].filter(t=>t.length>=2));
+  const scored=[];
+  policies.forEach(p=>{
+    const anchor = tokenize((p.keywords||[]).join(" ")+" "+(p.category||""));
+    let hit=false;
+    for(const b of qBig){ if(anchor.has(b)){ hit=true; break; } }
+    if(!hit) return;
+    scored.push([scorePolicy(qTokens,p), p.id||"", p]);
+  });
+  scored.sort((a,b)=> (b[0]-a[0]) || (a[1]<b[1]?-1:1));
+  return scored.slice(0,top_k).map(x=>x[2]);
+}
+function findConflict(policies){
+  const ids = new Set(policies.map(p=>p.id));
+  for(const p of policies){
+    for(const other of (p.conflict_with||[])){
+      if(ids.has(other)) return [p.id, other].sort();
+    }
+  }
+  return null;
+}
+function topTier(hits, query){
+  if(!hits.length) return [];
+  const qTokens = tokenize(query);
+  const scored = hits.map(p=>[scorePolicy(qTokens,p), p]);
+  const smax = Math.max(...scored.map(s=>s[0]));
+  return scored.filter(s=>s[0] >= smax-1).map(s=>s[1]);
+}
+
+// ============================ 转人工本地记录（localStorage） ============================
+const LS_KEY = "reimb_escalations";
+function loadRecords(){ try { return JSON.parse(localStorage.getItem(LS_KEY)||"[]"); } catch(e){ return []; } }
+function recordEscalation(query, reason, hits){
+  const id = new Date().toISOString().slice(0,19).replace(/[-:T]/g,"") + "-" + Math.random().toString(16).slice(2,8);
+  const entry = { id, ts:new Date().toISOString(), query, reason, matched:(hits||[]).map(p=>p.id) };
+  const list = loadRecords(); list.push(entry);
+  localStorage.setItem(LS_KEY, JSON.stringify(list));
+  return id;
+}
+
+// ============================ 应答：规则引擎（默认离线可跑） ============================
+function demoAnswer(query, hits){
+  if(!hits.length)
+    return {status:"escalate", answer:"", citations:[], reason:"未检索到与问题相关的政策，需人工确认适用范围。"};
+  const tier = topTier(hits, query);
+  const conflict = findConflict(tier);
+  if(conflict)
+    return {status:"escalate", answer:"", citations:[], reason:`检索到相互冲突的政策（${conflict.join(", ")}），同场景额度不一致，需人工审核确认适用标准。`};
+  const blocks = tier.slice(0,3).map(p=>`《${p.title}》：${p.content}`);
+  return {status:"answered", answer:blocks.join("；"), citations:tier.slice(0,3).map(p=>p.id), reason:"规则引擎命中"};
+}
+
+// ============================ 可选：大模型增强（浏览器直连，失败回退） ============================
+const AI = (()=>{
+  try { return JSON.parse(localStorage.getItem("reimb_ai")||"null") || {base:"",key:"",model:""}; }
+  catch(e){ return {base:"",key:"",model:""}; }
+})();
+function aiValid(){ return !!(AI.base && AI.key && AI.model); }
+const SYSTEM_PROMPT = `你是一名公司「报销政策智能助手」。你只能依据下方提供的【政策上下文】回答员工的问题。
+规则：
+1. 若问题能在政策上下文中找到明确依据，请用简洁中文回答，并在 citations 中列出引用的政策 id 列表。
+2. 若出现以下任一情况，必须将 status 设为 "escalate"，在 reason 中说明原因：政策上下文无相关政策（政策不存在）；命中的多条政策相互冲突；政策依据不足无法给出确定答案。
+3. 只返回 JSON 对象，格式严格为：{"status":"answered|escalate","answer":str,"citations":[str],"reason":str}`;
+
+function parseJson(text){
+  if(!text) return null;
+  text = text.replace(/```(?:json)?\s*/g,"").replace(/\s*```/g,"").trim();
+  const s=text.indexOf("{"); const e=text.lastIndexOf("}");
+  if(s===-1||e===-1||e<s) return null;
+  try { return JSON.parse(text.slice(s,e+1)); } catch(_){ return null; }
+}
+async function callLLM(query, hits){
+  if(!aiValid()) return null;
+  const ctx = hits.length ? hits.map(p=>`[${p.id}] ${p.title}（类别：${p.category}，生效：${p.effective_date}）\n${p.content}`).join("\n\n") : "（无相关政策）";
+  try{
+    const resp = await fetch(AI.base.replace(/\/$/,"")+"/chat/completions", {
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+AI.key},
+      body: JSON.stringify({model:AI.model, temperature:0,
+        messages:[{role:"system",content:SYSTEM_PROMPT+"\n\n===== 政策上下文 =====\n"+ctx},
+                  {role:"user",content:query}]})
+    });
+    if(!resp.ok) return null;
+    const data = await resp.json();
+    return data?.choices?.[0]?.message?.content || null;
+  }catch(_){ return null; }
+}
+
+// ============================ 主流程 ============================
+async function answerQuestion(query){
+  const hits = retrieve(query, POLICIES, 6);
+  let result = null;
+  if(aiValid()){
+    const text = await callLLM(query, hits);
+    if(text){
+      const data = parseJson(text);
+      if(data && (data.status==="answered"||data.status==="escalate")){
+        let cit = data.citations||[];
+        if(data.status==="answered"){
+          const hitIds = new Set(hits.map(h=>h.id));
+          cit = cit.filter(c=>hitIds.has(c));
+        }
+        result = {status:data.status, answer:data.answer||"", citations:cit, reason:data.reason||""};
+      }
+    }
+  }
+  if(!result) result = demoAnswer(query, hits);
+  if(result.status==="escalate" && !result.escalation_id)
+    result.escalation_id = recordEscalation(query, result.reason, hits);
+  return result;
+}
+
+// ============================ UI ============================
+const chat=document.getElementById('chat'), q=document.getElementById('q'), send=document.getElementById('send');
+function scroll(){ chat.scrollTop=chat.scrollHeight; }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])); }
+function addUser(text){ const d=document.createElement('div'); d.className='msg user'; d.textContent=text; chat.appendChild(d); scroll(); }
+function addBot(data){
+  if(data.status==='escalate'){
+    const c=document.createElement('div'); c.className='esc-card';
+    c.innerHTML='<span class="tag">已转人工审核</span><div class="reason">'+escapeHtml(data.reason||'该问题需人工进一步核实。')+'</div>'+
+      (data.escalation_id?'<div class="eid">工单编号：'+escapeHtml(data.escalation_id)+'</div>':'');
+    chat.appendChild(c);
+  } else {
+    const d=document.createElement('div'); d.className='msg bot'; d.textContent=data.answer||'';
+    if(data.citations&&data.citations.length){
+      const c=document.createElement('div'); c.className='cites';
+      c.innerHTML='政策来源：'+data.citations.map(id=>'<span>'+escapeHtml(id)+'</span>').join('');
+      d.appendChild(c);
+    }
+    chat.appendChild(d);
+  }
+  scroll();
+}
+function typing(){ const t=document.createElement('div'); t.className='typing'; t.textContent='助手正在输入…'; chat.appendChild(t); scroll(); return t; }
+async function ask(text){
+  text=(text||'').trim(); if(!text) return;
+  addUser(text); const t=typing(); send.disabled=true;
+  try{
+    const data = await answerQuestion(text); t.remove(); addBot(data);
+  }catch(e){
+    t.remove();
+    const c=document.createElement('div'); c.className='esc-card';
+    c.innerHTML='<span class="tag">已转人工审核</span><div class="reason">处理异常，已为您转人工：'+escapeHtml(e.message||'未知错误')+'</div>';
+    chat.appendChild(c); scroll();
+  }finally{ send.disabled=false; }
+}
+send.addEventListener('click',()=>{ ask(q.value); q.value=''; });
+q.addEventListener('keydown',e=>{ if(e.key==='Enter'){ ask(q.value); q.value=''; } });
+document.getElementById('chips').addEventListener('click',e=>{ if(e.target.dataset.q) ask(e.target.dataset.q); });
+
+// 抽屉
+const drawer=document.getElementById('drawer'), recBody=document.getElementById('recBody');
+document.getElementById('btnRecords').addEventListener('click',()=>{
+  const list=loadRecords();
+  if(!list.length){ recBody.innerHTML='<div class="empty">暂无转人工记录</div>'; }
+  else{
+    recBody.innerHTML = list.slice().reverse().map(r=>
+      `<div class="rec"><div class="id">工单 ${escapeHtml(r.id)}</div>`+
+      `<div class="meta">${escapeHtml(r.ts||'')}</div>`+
+      `<div class="q">问：${escapeHtml(r.query||'')}</div>`+
+      `<div class="r">原因：${escapeHtml(r.reason||'')}</div>`+
+      (r.matched&&r.matched.length?`<div class="meta">疑似命中：${escapeHtml(r.matched.join(", "))}</div>`:'')+
+      `</div>`).join('');
+  }
+  drawer.classList.add('open');
+});
+document.getElementById('drawerClose').addEventListener('click',()=>drawer.classList.remove('open'));
+
+// 设置
+const settings=document.getElementById('settings');
+document.getElementById('btnSettings').addEventListener('click',()=>{
+  document.getElementById('setBase').value=AI.base||'';
+  document.getElementById('setKey').value=AI.key||'';
+  document.getElementById('setModel').value=AI.model||'';
+  settings.classList.add('open');
+});
+document.getElementById('setCancel').addEventListener('click',()=>settings.classList.remove('open'));
+document.getElementById('setSave').addEventListener('click',()=>{
+  AI.base=document.getElementById('setBase').value.trim();
+  AI.key=document.getElementById('setKey').value.trim();
+  AI.model=document.getElementById('setModel').value.trim();
+  localStorage.setItem("reimb_ai", JSON.stringify(AI));
+  settings.classList.remove('open');
+  const tip=document.createElement('div'); tip.className='msg bot';
+  tip.textContent = aiValid() ? '✅ 已启用大模型增强（'+(AI.model)+'）。' : '已保存，当前为空，将使用本地规则引擎离线作答。';
+  chat.appendChild(tip); scroll();
+});
+</script>
+</body>
+</html>
